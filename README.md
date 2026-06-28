@@ -36,6 +36,42 @@ class PostsPage extends NixComponent {
 
 ```
 
+### Reactive Params (auto-refetch)
+
+Pass `params` to derive the cache key from reactive signals. Read any signals
+inside the function: whenever they change, the query recomputes its key and
+refetches automatically. Each distinct params value is cached independently,
+so revisiting previous params serves cached data instantly.
+
+```ts
+import { signal } from "@deijose/nix-js";
+import { createQuery } from "@deijose/nix-query";
+
+const search = signal("");
+const page = signal(1);
+
+const posts = createQuery(
+  "posts",
+  // The fetcher receives the current params.
+  ({ q, page }) =>
+    fetch(`/api/posts?q=${encodeURIComponent(q)}&page=${page}`).then((r) => r.json()),
+  {
+    params: () => ({ q: search.value, page: page.value }),
+    staleTime: 30_000,
+  }
+);
+
+// Changing any tracked signal triggers an automatic refetch under a new key.
+search.value = "nix";
+```
+
+Notes:
+
+- The effective cache key is `key::<stable-serialized-params>`; object key order
+  does not matter.
+- If params serialize to the same value, no refetch occurs (deduped).
+- In-flight responses for stale params are ignored, preventing race conditions.
+
 ### Cache Writes (v1.2)
 
 ```ts

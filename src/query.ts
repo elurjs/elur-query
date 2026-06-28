@@ -1,4 +1,4 @@
-import { signal, type Signal } from "@deijose/nix-js";
+import { signal, effect, type Signal } from "@deijose/nix-js";
 
 export type QueryStatus = "pending" | "success" | "error";
 
@@ -9,7 +9,7 @@ export interface QueryResult<T> {
     refetch(): void;
 }
 
-export interface QueryOptions {
+export interface QueryOptions<P = void> {
     /**
      * Time in ms that cached data is considered fresh.
      * While fresh, mounting will not trigger a background refetch.
@@ -23,6 +23,15 @@ export interface QueryOptions {
      * @default "always"
      */
     refetchOnMount?: "always" | "stale" | false;
+    /**
+     * Reactive params source. Read signals inside this function; whenever any
+     * of them changes, the query recomputes its cache key and refetches
+     * automatically (TanStack-Query style). The returned value is passed to
+     * the fetcher and serialized into the effective cache key, so different
+     * params are cached independently.
+     * @default undefined
+     */
+    params?: () => P;
 }
 
 interface CacheEntry<T = unknown> {
@@ -69,6 +78,21 @@ function _setCacheEntry<T>(key: string, data: T): void {
         subscribers: existing?.subscribers ?? 0,
     });
     _startGC();
+}
+
+/**
+ * Deterministic serialization of params used to build the effective cache key.
+ * Object keys are sorted so `{ a, b }` and `{ b, a }` produce the same key.
+ */
+function _stableStringify(value: unknown): string {
+    if (value === undefined) return "";
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) {
+        return `[${value.map(_stableStringify).join(",")}]`;
+    }
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${_stableStringify(obj[k])}`).join(",")}}`;
 }
 
 function _isFresh(key: string, staleTime: number): boolean {
@@ -174,79 +198,139 @@ export function invalidateQueries(key: string): void {
     for (const run of handlers) run();
 }
 
+const _queryEffectCleanup = new FinalizationRegistry<() => void>((dispose) => {
+    dispose();
+});
+
 /**
  * Key-based async data fetching with global cache and invalidation.
  * Returns reactive signals for pending/success/error flows.
+ *
+ * When `options.params` is provided, the query tracks the signals read inside
+ * it and automatically recomputes its cache key + refetches whenever they
+ * change. Each distinct params value is cached independently and the fetcher
+ * receives the current params.
  */
-export function createQuery<T>(
+export function createQuery<T, P = void>(
     key: string,
-    asyncFn: () => Promise<T>,
-    options: QueryOptions = {}
+    asyncFn: (params: P) => Promise<T>,
+    options: QueryOptions<P> = {}
 ): QueryResult<T> {
-    const { staleTime = 0, refetchOnMount = "always" } = options;
+    const { staleTime = 0, refetchOnMount = "always", params } = options;
 
-    const cached = _getCacheEntry<T>(key);
-    const status = signal<QueryStatus>(cached ? "success" : "pending");
-    const data = signal<T | undefined>(cached?.data);
+    const status = signal<QueryStatus>("pending");
+    const data = signal<T | undefined>(undefined);
     const error = signal<unknown>(undefined);
 
-    const _fetch = (): void => {
-        asyncFn().then(
+    let currentKey = key;
+    let currentParams = undefined as P;
+    let unbind: (() => void) | null = null;
+
+    const _fetch = (k: string, p: P): void => {
+        asyncFn(p).then(
             (result) => {
-                _setCacheEntry(key, result);
+                // Ignore responses from a key that is no longer current
+                // (e.g. params changed while a request was in flight).
+                if (k !== currentKey) return;
+                _setCacheEntry(k, result);
                 data.value = result;
                 error.value = undefined;
                 status.value = "success";
             },
             (err) => {
+                if (k !== currentKey) return;
                 error.value = err;
                 status.value = "error";
             }
         );
     };
 
-    const _run = (): void => {
+    const _run = (k: string, p: P): void => {
         if (status.peek() === "pending") {
             data.value = undefined;
             error.value = undefined;
         }
-        _fetch();
+        _fetch(k, p);
     };
 
-    if (!_queryRegistry.has(key)) _queryRegistry.set(key, new Set());
-    const handlers = _queryRegistry.get(key)!;
-    handlers.add(_run);
+    const _bind = (k: string, p: P): (() => void) => {
+        const run = (): void => _run(k, p);
 
-    const _syncFromCache: QuerySyncHandler = () => {
-        const next = _getCacheEntry<T>(key);
-        if (next && next.data !== undefined) {
-            status.value = "success";
-            data.value = next.data;
+        if (!_queryRegistry.has(k)) _queryRegistry.set(k, new Set());
+        const handlers = _queryRegistry.get(k)!;
+        handlers.add(run);
+
+        const sync: QuerySyncHandler = () => {
+            const next = _getCacheEntry<T>(k);
+            if (next && next.data !== undefined) {
+                status.value = "success";
+                data.value = next.data;
+                error.value = undefined;
+                return;
+            }
+            status.value = "pending";
             error.value = undefined;
-            return;
-        }
-        status.value = "pending";
-        error.value = undefined;
-        data.value = undefined;
+            data.value = undefined;
+        };
+
+        if (!_querySyncRegistry.has(k)) _querySyncRegistry.set(k, new Set());
+        const syncHandlers = _querySyncRegistry.get(k)!;
+        syncHandlers.add(sync);
+
+        _queryLifecycleCleanup.register(status as object, { key: k, run, sync });
+
+        return () => {
+            handlers.delete(run);
+            if (handlers.size === 0) _queryRegistry.delete(k);
+            syncHandlers.delete(sync);
+            if (syncHandlers.size === 0) _querySyncRegistry.delete(k);
+        };
     };
 
-    if (!_querySyncRegistry.has(key)) _querySyncRegistry.set(key, new Set());
-    const syncHandlers = _querySyncRegistry.get(key)!;
-    syncHandlers.add(_syncFromCache);
+    const _activate = (k: string, p: P): void => {
+        const cached = _getCacheEntry<T>(k);
+        if (cached) {
+            status.value = "success";
+            data.value = cached.data;
+            error.value = undefined;
+        } else {
+            status.value = "pending";
+            data.value = undefined;
+            error.value = undefined;
+        }
 
-    _queryLifecycleCleanup.register(status as object, { key, run: _run, sync: _syncFromCache });
+        const fresh = _isFresh(k, staleTime);
+        if (!cached) {
+            _run(k, p);
+        } else if (refetchOnMount === false) {
+            // skip
+        } else if (refetchOnMount === "stale" && fresh) {
+            // skip
+        } else if (refetchOnMount === "always" && fresh && staleTime > 0) {
+            // skip
+        } else {
+            _fetch(k, p);
+        }
+    };
 
-    const fresh = _isFresh(key, staleTime);
-    if (!cached) {
-        _run();
-    } else if (refetchOnMount === false) {
-        // skip
-    } else if (refetchOnMount === "stale" && fresh) {
-        // skip
-    } else if (refetchOnMount === "always" && fresh && staleTime > 0) {
-        // skip
+    if (params) {
+        const dispose = effect(() => {
+            const p = params();
+            const k = `${key}::${_stableStringify(p)}`;
+            // No change in effective key — dedupe, keep current binding.
+            if (unbind && k === currentKey) return;
+            if (unbind) unbind();
+            currentKey = k;
+            currentParams = p;
+            unbind = _bind(k, p);
+            _activate(k, p);
+        });
+        _queryEffectCleanup.register(status as object, dispose);
     } else {
-        _fetch();
+        currentKey = key;
+        currentParams = undefined as P;
+        unbind = _bind(key, currentParams);
+        _activate(key, currentParams);
     }
 
     return {
@@ -254,8 +338,8 @@ export function createQuery<T>(
         data,
         error,
         refetch: () => {
-            _queryCache.delete(key);
-            _run();
+            _queryCache.delete(currentKey);
+            _run(currentKey, currentParams);
         },
     };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { html, mount, NixComponent } from "@deijose/nix-js";
+import { html, mount, NixComponent, signal, batch } from "@deijose/nix-js";
 import {
     createQuery,
     invalidateQueries,
@@ -173,6 +173,145 @@ describe("createQuery / invalidateQueries", () => {
         );
         expect(getQueryData<{ id: number; name: string }[]>("users/list")?.length).toBe(3);
         expect(q.data.value?.length).toBe(3);
+    });
+});
+
+describe("createQuery with reactive params", () => {
+    beforeEach(() => {
+        clearQueryCache();
+    });
+
+    it("passes params to the fetcher", async () => {
+        const search = signal("ana");
+        let received: string | undefined;
+
+        createQuery<string[], { q: string }>(
+            "posts",
+            async ({ q }) => {
+                received = q;
+                return [q];
+            },
+            { params: () => ({ q: search.value }) }
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(received).toBe("ana");
+    });
+
+    it("refetches automatically when a param signal changes", async () => {
+        const search = signal("a");
+        const calls: string[] = [];
+
+        const { data } = createQuery<string, { q: string }>(
+            "search",
+            async ({ q }) => {
+                calls.push(q);
+                return `result:${q}`;
+            },
+            { params: () => ({ q: search.value }) }
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(data.value).toBe("result:a");
+        expect(calls).toEqual(["a"]);
+
+        search.value = "b";
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(data.value).toBe("result:b");
+        expect(calls).toEqual(["a", "b"]);
+    });
+
+    it("caches each param value independently and serves cache on revisit", async () => {
+        const id = signal(1);
+        let callCount = 0;
+
+        const { data } = createQuery<number, { id: number }>(
+            "user",
+            async ({ id }) => {
+                callCount++;
+                return id * 10;
+            },
+            { params: () => ({ id: id.value }), staleTime: Infinity }
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(data.value).toBe(10);
+        expect(callCount).toBe(1);
+
+        id.value = 2;
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(data.value).toBe(20);
+        expect(callCount).toBe(2);
+
+        // Revisit id=1 — served from cache, no new fetch.
+        id.value = 1;
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(data.value).toBe(10);
+        expect(callCount).toBe(2);
+    });
+
+    it("does not refetch when params serialize to the same key", async () => {
+        const a = signal(1);
+        const b = signal(2);
+        let callCount = 0;
+
+        createQuery<number, { sum: number }>(
+            "stable",
+            async () => {
+                callCount++;
+                return 0;
+            },
+            { params: () => ({ sum: a.value + b.value }) }
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(callCount).toBe(1);
+
+        // a+b stays 3 (atomic) → same key → no refetch.
+        batch(() => {
+            a.value = 0;
+            b.value = 3;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(callCount).toBe(1);
+    });
+
+    it("ignores stale in-flight responses after params change", async () => {
+        const id = signal(1);
+        const resolvers: Record<number, (v: string) => void> = {};
+
+        const { data } = createQuery<string, { id: number }>(
+            "race",
+            ({ id }) =>
+                new Promise<string>((resolve) => {
+                    resolvers[id] = resolve;
+                }),
+            { params: () => ({ id: id.value }) }
+        );
+
+        // Switch to id=2 before id=1 resolves.
+        id.value = 2;
+        await Promise.resolve();
+
+        // Resolve the stale id=1 request last.
+        resolvers[2]("v2");
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(data.value).toBe("v2");
+
+        resolvers[1]("v1");
+        await Promise.resolve();
+        await Promise.resolve();
+        // Stale response must not overwrite current data.
+        expect(data.value).toBe("v2");
     });
 });
 

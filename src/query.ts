@@ -189,13 +189,27 @@ export function updateQueryData<T>(
  * Forces all active `createQuery()` instances with the given key to re-fetch.
  * Clears the cached data so subsequent mounts also fetch fresh data.
  * Instances that have been garbage-collected are pruned automatically.
+ *
+ * When queries are created with `params`, their effective cache key is
+ * `<baseKey>::<serializedParams>`. Invalidating the base key (e.g.
+ * `invalidateQueries("events/checklist")`) also invalidates every param
+ * variant of that key so mutations don't have to know the current params.
  */
 export function invalidateQueries(key: string): void {
-    _queryCache.delete(key);
-    _notifyQuerySync(key);
-    const handlers = _queryRegistry.get(key);
-    if (!handlers) return;
-    for (const run of handlers) run();
+    const prefix = `${key}::`;
+    const matchingKeys: string[] = [];
+    for (const k of _queryCache.keys()) {
+        if (k === key || k.startsWith(prefix)) matchingKeys.push(k);
+    }
+    for (const k of matchingKeys) {
+        _queryCache.delete(k);
+        _notifyQuerySync(k);
+    }
+    for (const [k, handlers] of _queryRegistry) {
+        if (k === key || k.startsWith(prefix)) {
+            for (const run of handlers) run();
+        }
+    }
 }
 
 const _queryEffectCleanup = new FinalizationRegistry<() => void>((dispose) => {

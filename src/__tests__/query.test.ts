@@ -313,6 +313,32 @@ describe("createQuery with reactive params", () => {
         // Stale response must not overwrite current data.
         expect(data.value).toBe("v2");
     });
+
+    it("invalidates param-scoped queries when the base key is invalidated", async () => {
+        const id = signal("abc");
+        let callCount = 0;
+
+        const { data } = createQuery<string, { id: string }>(
+            "events/checklist",
+            async ({ id }) => {
+                callCount++;
+                return `items:${id}`;
+            },
+            { params: () => ({ id: id.value }) }
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(data.value).toBe("items:abc");
+        expect(callCount).toBe(1);
+
+        invalidateQueries("events/checklist");
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(callCount).toBe(2);
+        expect(data.value).toBe("items:abc");
+    });
 });
 
 describe("Query Cache Utils & Garbage Collection", () => {

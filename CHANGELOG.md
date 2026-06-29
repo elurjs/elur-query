@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1
+
+### Fixed
+
+- `invalidateQueries(key)` now invalidates all param-scoped cache variants of `key` (`key::<serialized-params>`), not just the exact base key. This fixes stale data after mutations when `createQuery` uses `params`.
+
 ## 1.4.0
 
 ### Added

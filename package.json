@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-query",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Query and cache utilities for Nix.js",
   "license": "MIT",
   "author": "Deiver Vasquez",

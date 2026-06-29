@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.2
+
+### Added
+
+- `QueryResult.key` exposes the effective cache key used by a query instance (including serialized params when applicable).
+- `QueryCacheOptions` with optional `params` support for `getQueryData`, `setQueryData`, `updateQueryData` and `clearQueryCache`, so cache helpers target the correct param-scoped key (`baseKey::<serializedParams>`).
+
+### Fixed
+
+- `clearQueryCache(key)` now removes all param-scoped variants of `key`, consistent with `invalidateQueries`.
+
 ## 1.4.1
 
 ### Fixed

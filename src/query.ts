@@ -3,6 +3,7 @@ import { signal, effect, type Signal } from "@deijose/nix-js";
 export type QueryStatus = "pending" | "success" | "error";
 
 export interface QueryResult<T> {
+    readonly key: string;
     readonly status: Signal<QueryStatus>;
     readonly data: Signal<T | undefined>;
     readonly error: Signal<unknown>;
@@ -32,6 +33,14 @@ export interface QueryOptions<P = void> {
      * @default undefined
      */
     params?: () => P;
+}
+
+export interface QueryCacheOptions {
+    /**
+     * Params value used to build the effective cache key (`baseKey::<serializedParams>`).
+     * When omitted, the helpers operate on the exact base key.
+     */
+    params?: unknown;
 }
 
 interface CacheEntry<T = unknown> {
@@ -95,6 +104,11 @@ function _stableStringify(value: unknown): string {
     return `{${keys.map((k) => `${JSON.stringify(k)}:${_stableStringify(obj[k])}`).join(",")}}`;
 }
 
+function _effectiveKey(key: string, options?: QueryCacheOptions): string {
+    if (!options || options.params === undefined) return key;
+    return `${key}::${_stableStringify(options.params)}`;
+}
+
 function _isFresh(key: string, staleTime: number): boolean {
     const entry = _queryCache.get(key);
     if (!entry) return false;
@@ -133,11 +147,21 @@ function _notifyQuerySync(key: string): void {
 /**
  * Clears one or all entries from the global query cache.
  * Passing no argument clears everything.
+ *
+ * When a base key is provided, all param-scoped variants (`key::<params>`)
+ * are also removed so the clear behaves consistently with `invalidateQueries`.
  */
 export function clearQueryCache(key?: string): void {
     if (key !== undefined) {
-        _queryCache.delete(key);
-        _notifyQuerySync(key);
+        const prefix = `${key}::`;
+        const matchingKeys: string[] = [];
+        for (const k of _queryCache.keys()) {
+            if (k === key || k.startsWith(prefix)) matchingKeys.push(k);
+        }
+        for (const k of matchingKeys) {
+            _queryCache.delete(k);
+            _notifyQuerySync(k);
+        }
     } else {
         const keys = Array.from(_queryCache.keys());
         _queryCache.clear();
@@ -159,29 +183,34 @@ export function setQueryCacheTime(ms: number): void {
 
 /**
  * Reads the current cached data for a key (if present).
+ * Pass `{ params }` to target the effective cache key used by queries with reactive params.
  */
-export function getQueryData<T>(key: string): T | undefined {
-    const entry = _getCacheEntry<T>(key);
+export function getQueryData<T>(key: string, options?: QueryCacheOptions): T | undefined {
+    const entry = _getCacheEntry<T>(_effectiveKey(key, options));
     return entry?.data;
 }
 
 /**
  * Writes data directly into query cache and updates active query signals.
+ * Pass `{ params }` to target the effective cache key used by queries with reactive params.
  */
-export function setQueryData<T>(key: string, data: T): void {
-    _setCacheEntry(key, data);
-    _notifyQuerySync(key);
+export function setQueryData<T>(key: string, data: T, options?: QueryCacheOptions): void {
+    const effectiveKey = _effectiveKey(key, options);
+    _setCacheEntry(effectiveKey, data);
+    _notifyQuerySync(effectiveKey);
 }
 
 /**
  * Atomically updates cached data from previous value and updates active query signals.
+ * Pass `{ params }` to target the effective cache key used by queries with reactive params.
  */
 export function updateQueryData<T>(
     key: string,
-    updater: (current: T | undefined) => T
+    updater: (current: T | undefined) => T,
+    options?: QueryCacheOptions
 ): T {
-    const next = updater(getQueryData<T>(key));
-    setQueryData(key, next);
+    const next = updater(getQueryData<T>(key, options));
+    setQueryData(key, next, options);
     return next;
 }
 
@@ -348,6 +377,7 @@ export function createQuery<T, P = void>(
     }
 
     return {
+        key: currentKey,
         status,
         data,
         error,

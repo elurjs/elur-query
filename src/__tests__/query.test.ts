@@ -339,6 +339,74 @@ describe("createQuery with reactive params", () => {
         expect(callCount).toBe(2);
         expect(data.value).toBe("items:abc");
     });
+
+    it("exposes the effective key on the query result", async () => {
+        const id = signal("abc");
+        const q = createQuery<string, { id: string }>(
+            "events/detail",
+            async ({ id }) => `detail:${id}`,
+            { params: () => ({ id: id.value }) }
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(q.key).toBe('events/detail::{"id":"abc"}');
+    });
+
+    it("getQueryData/setQueryData/updateQueryData work with params", async () => {
+        const id = signal("abc");
+        const q = createQuery<string[], { id: string }>(
+            "events/items",
+            async ({ id }) => [`item:${id}`],
+            { refetchOnMount: false, params: () => ({ id: id.value }) }
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(q.data.value).toEqual(["item:abc"]);
+
+        setQueryData<string[]>("events/items", ["item:abc", "extra"], { params: { id: "abc" } });
+        expect(getQueryData<string[]>("events/items", { params: { id: "abc" } })?.length).toBe(2);
+        expect(q.data.value?.length).toBe(2);
+
+        updateQueryData<string[]>(
+            "events/items",
+            (current = []) => [...current, "another"],
+            { params: { id: "abc" } }
+        );
+        expect(getQueryData<string[]>("events/items", { params: { id: "abc" } })?.length).toBe(3);
+        expect(q.data.value?.length).toBe(3);
+    });
+
+    it("clearQueryCache clears param-scoped variants by base key", async () => {
+        const id = signal("abc");
+        let callCount = 0;
+
+        const q = createQuery<string, { id: string }>(
+            "events/clear-test",
+            async ({ id }) => {
+                callCount++;
+                return `value:${id}`;
+            },
+            { refetchOnMount: false, params: () => ({ id: id.value }) }
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(q.data.value).toBe("value:abc");
+        expect(callCount).toBe(1);
+
+        clearQueryCache("events/clear-test");
+        await Promise.resolve();
+
+        expect(getQueryData<string>("events/clear-test", { params: { id: "abc" } })).toBeUndefined();
+
+        // Remounting/reattivating should fetch again because cache is gone.
+        q.refetch();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(callCount).toBe(2);
+    });
 });
 
 describe("Query Cache Utils & Garbage Collection", () => {

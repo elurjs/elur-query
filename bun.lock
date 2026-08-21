@@ -5,7 +5,7 @@
     "": {
       "name": "@deijose/nix-query",
       "devDependencies": {
-        "@deijose/nix-js": "^2.1.0",
+        "@deijose/nix-js": "3.0.3",
         "happy-dom": "^20.8.3",
         "terser": "^5.46.0",
         "typescript": "~5.9.3",
@@ -13,12 +13,12 @@
         "vitest": "^4.0.18",
       },
       "peerDependencies": {
-        "@deijose/nix-js": ">=2.1.0 <3",
+        "@deijose/nix-js": "^3.0.3",
       },
     },
   },
   "packages": {
-    "@deijose/nix-js": ["@deijose/nix-js@2.1.0", "", {}, "sha512-MsRh0O0rDpa6w+QEcxEoD08v2GSoWyTaSO88AAzqpE9HUJg20XyCLH0+2MaAjEJn26G4SGR1WwAEZZHQVwnRNg=="],
+    "@deijose/nix-js": ["@deijose/nix-js@3.0.3", "", {}, "sha512-ZXzTgmIIOyOQtJwPVjIiA1/zFVXX7sXPUs1CSj9gruPbbz3A9txGnTNTNmPLWl1MI8o1Gz/ciboHucy9XBIEEQ=="],
 
     "@emnapi/core": ["@emnapi/core@1.9.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.0", "tslib": "^2.4.0" } }, "sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA=="],
 

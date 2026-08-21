@@ -12,6 +12,8 @@ Estado actual:
 - v1.1: completada
 - v1.2: completada
 - v1.3: completada (experimental)
+- v1.4: completada (reactive params, cache helpers con params, effective key)
+- v1.5: completada (single-flight, dispose, keepPreviousData/placeholderData, stableStringify robusto)
 
 ### v1.1
 
@@ -69,6 +71,33 @@ Nota de diseno:
 
 - El core no asume `localStorage`, `IndexedDB` ni plugins moviles.
 - Cada app define su propia estrategia de cola con un adaptador.
+
+### v1.5
+
+Hardening: single-flight, dispose, keepPreviousData/placeholderData, stableStringify robusto.
+
+#### Contrato concreto v1.5
+
+- Single-Flight Request Deduplication:
+  - Mapa global `_inflightRequests` compartido por key.
+  - Dos o mas componentes montando la misma key con cache vacio disparan un solo fetch.
+  - `invalidateQueries` y `clearQueryCache` limpian el mapa inflight.
+  - `refetch()` bypassa el single-flight para forzar una peticion nueva.
+- `dispose()` en `createQuery` y `createCommand`:
+  - Remueve listeners globales (`online`).
+  - Cancela requests en vuelo.
+  - Limpia registros globales (`_queryRegistry`, `_querySyncRegistry`, `_globalCommandQueues`, `_globalLatestControllers`, `_globalReplayLocks`).
+  - Detiene el tracking de signals de params.
+  - Idempotente.
+- `keepPreviousData` y `placeholderData` en `createQuery`:
+  - `keepPreviousData`: mantiene la data anterior visible durante el refetch.
+  - `placeholderData`: muestra un valor estatico o calculado cuando no hay cache.
+  - `keepPreviousData` tiene prioridad cuando ya hay data previa.
+- `_stableStringify` robusto:
+  - `Date` serializado via `.toISOString()` (UTC, timezone-safe).
+  - `Map` y `Set` serializados con orden deterministico.
+  - Referencias circulares lanzan `TypeError` en vez de stack overflow.
+- `serializeParams` custom en `createQuery` y cache helpers.
 
 ## Matriz de Retry Recomendada
 

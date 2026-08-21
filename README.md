@@ -71,6 +71,109 @@ Notes:
   does not matter.
 - If params serialize to the same value, no refetch occurs (deduped).
 - In-flight responses for stale params are ignored, preventing race conditions.
+- `Map`, `Set`, and `Date` are supported in params and serialized deterministically.
+- Circular references in params throw a `TypeError` instead of causing a stack overflow.
+
+### Single-Flight Request Deduplication (v1.5)
+
+When two or more components mount the same query key simultaneously with an
+empty cache, only one fetch is fired. All subscribers share the same in-flight
+promise.
+
+```ts
+// Both queries share a single network request on first mount.
+const q1 = createQuery("users", () => fetch("/api/users").then((r) => r.json()));
+const q2 = createQuery("users", () => fetch("/api/users").then((r) => r.json()));
+// → only 1 fetch, both q1.data and q2.data resolve together.
+```
+
+### keepPreviousData / placeholderData (v1.5)
+
+Prevent UI flicker when params change by keeping the previous data visible
+while the new fetch is in progress:
+
+```ts
+const page = signal(1);
+
+const q = createQuery(
+  "posts",
+  ({ page }) => fetch(`/api/posts?page=${page}`).then((r) => r.json()),
+  {
+    params: () => ({ page: page.value }),
+    keepPreviousData: true, // old data stays visible during refetch
+  }
+);
+```
+
+Use `placeholderData` to show a fallback when no cached data exists yet:
+
+```ts
+const q = createQuery(
+  "posts",
+  () => fetch("/api/posts").then((r) => r.json()),
+  {
+    placeholderData: [], // shows [] while loading instead of undefined
+  }
+);
+
+// placeholderData can also be a function receiving the previous data:
+const q2 = createQuery(
+  "posts",
+  ({ page }) => fetch(`/api/posts?page=${page}`).then((r) => r.json()),
+  {
+    params: () => ({ page: page.value }),
+    placeholderData: (prev) => (prev ? [...prev] : []),
+  }
+);
+```
+
+When both are set, `keepPreviousData` takes priority if previous data exists;
+otherwise `placeholderData` is used.
+
+### Custom serializeParams (v1.5)
+
+Provide a custom serializer for params used to build the effective cache key.
+Useful for exotic types, performance optimization, or hashed/encrypted keys:
+
+```ts
+const q = createQuery(
+  "users",
+  ({ id }) => fetch(`/api/users/${id}`).then((r) => r.json()),
+  {
+    params: () => ({ id: "abc" }),
+    serializeParams: (params) => JSON.stringify(params), // custom impl
+  }
+);
+
+// Use the same serializer for imperative cache access:
+setQueryData("users", data, {
+  params: { id: "abc" },
+  serializeParams: (p) => JSON.stringify(p),
+});
+getQueryData("users", {
+  params: { id: "abc" },
+  serializeParams: (p) => JSON.stringify(p),
+});
+```
+
+### dispose() (v1.5)
+
+Both `createQuery` and `createCommand` return a `dispose()` method for explicit
+cleanup. This removes global listeners, cancels in-flight requests, unregisters
+from global registries, and stops param signal tracking:
+
+```ts
+const q = createQuery("users", () => fetch("/api/users").then((r) => r.json()));
+q.dispose(); // query no longer reacts to invalidation or param changes
+
+const cmd = createCommand("orders/create", async (payload) => { /* ... */ }, {
+  mode: "queueOffline",
+  offline: { adapter: myAdapter, replayOnReconnect: true },
+});
+cmd.dispose(); // removes the "online" event listener and cleans global state
+```
+
+`dispose()` is idempotent — calling it multiple times is safe.
 
 ### Cache Writes (v1.2)
 
@@ -169,7 +272,8 @@ import {
 
 type CreateOrderInput = { id: string; total: number };
 
-class LocalStorageQueueAdapter implements CommandQueueAdapter<CreateOrderInput> {
+class LocalStorageQueueAdapter
+  implements CommandQueueAdapter<CreateOrderInput> {
   private key = "nix-query:offline-commands";
 
   private read(): OfflineCommandEntry<CreateOrderInput>[] {
@@ -253,9 +357,25 @@ Recommended for v1.3:
 - `invalidateQueries(key)`
 - `clearQueryCache(key?)`
 - `setQueryCacheTime(ms)`
-- `getQueryData(key)`
-- `setQueryData(key, value)`
-- `updateQueryData(key, updater)`
+- `getQueryData(key, options?)`
+- `setQueryData(key, value, options?)`
+- `updateQueryData(key, updater, options?)`
+
+`createQuery` return shape:
+
+- Signals: `status`, `data`, `error`
+- Properties: `key` (effective cache key)
+- Methods: `refetch()`, `dispose()` (v1.5)
+
+Query options:
+
+- `staleTime`: ms while cached data is considered fresh (default `0`)
+- `refetchOnMount`: `"always" | "stale" | false` (default `"always"`)
+- `params`: reactive params function `() => P`
+- `serializeParams`: custom serializer `(params: unknown) => string` (v1.5)
+- `keepPreviousData`: retain previous data during refetch (v1.5)
+- `placeholderData`: static value or `(previousData) => value` shown while
+  pending (v1.5)
 
 ### Command (v1.3)
 
@@ -265,7 +385,8 @@ Recommended for v1.3:
 
 - Signals: `status`, `data`, `error`, `variables`, `failureCount`, `inFlight`, `queuedCount`
 - Computed signals: `isIdle`, `isPending`, `isSuccess`, `isError`, `isQueued`
-- Methods: `execute`, `executeAsync`, `reset`, `cancel`, `replayQueue`, `clearQueue`
+- Methods: `execute`, `executeAsync`, `reset`, `cancel`, `replayQueue`,
+  `clearQueue`, `dispose` (v1.5)
 
 Command options:
 

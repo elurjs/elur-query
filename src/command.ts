@@ -86,6 +86,8 @@ export interface CommandResult<TVariables, TResult> {
     cancel(): void;
     replayQueue(): Promise<void>;
     clearQueue(): Promise<void>;
+    /** Remove the `online` listener, cancel in-flight, and clean global state. */
+    dispose(): void;
 }
 
 export class CommandQueuedError<TVariables = unknown> extends Error {
@@ -219,6 +221,8 @@ export function createCommand<TVariables, TResult, TContext = unknown>(
     let _latestToken = 0;
     let _localQueue = Promise.resolve() as Promise<unknown>;
     const _controllers = new Set<AbortController>();
+    let _onlineHandler: (() => void) | null = null;
+    let _disposed = false;
 
     const _incInFlight = () => {
         inFlight.update((n) => n + 1);
@@ -322,6 +326,7 @@ export function createCommand<TVariables, TResult, TContext = unknown>(
     };
 
     const _run = async (runVariables: TVariables, token: number): Promise<TResult> => {
+        if (_disposed) throw _abortError();
         const controller = new AbortController();
         let commandContext: TContext | undefined = undefined;
 
@@ -546,11 +551,25 @@ export function createCommand<TVariables, TResult, TContext = unknown>(
 
     if (mode === "queueOffline" && offline?.replayOnReconnect !== false) {
         if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-            window.addEventListener("online", () => {
+            _onlineHandler = () => {
                 void replayQueue();
-            });
+            };
+            window.addEventListener("online", _onlineHandler);
         }
     }
+
+    const dispose = (): void => {
+        if (_disposed) return;
+        _disposed = true;
+        cancel();
+        if (_onlineHandler && typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+            window.removeEventListener("online", _onlineHandler);
+            _onlineHandler = null;
+        }
+        _globalCommandQueues.delete(commandKey);
+        _globalLatestControllers.delete(commandKey);
+        _globalReplayLocks.delete(commandKey);
+    };
 
     return {
         status,
@@ -571,5 +590,6 @@ export function createCommand<TVariables, TResult, TContext = unknown>(
         cancel,
         replayQueue,
         clearQueue,
+        dispose,
     };
 }

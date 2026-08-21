@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.0
+
+### Added
+
+- **Single-Flight Request Deduplication**: when two or more components mount the same query key simultaneously with an empty cache, only one fetch is fired. All subscribers share the same in-flight promise. Applies to both base keys and param-scoped keys.
+- **`keepPreviousData` option** for `createQuery`: retains the previous data visible while a new fetch is in progress (e.g. after params change), eliminating UI flicker.
+- **`placeholderData` option** for `createQuery`: shows a static value or function-derived value while a fetch is pending and no cached data is available. `keepPreviousData` takes priority when previous data exists.
+- **`serializeParams` option** for `createQuery`, `getQueryData`, `setQueryData`, `updateQueryData` and `clearQueryCache`: allows a custom serializer for params used to build the effective cache key.
+- **`dispose()` method** on both `createQuery` and `createCommand` results: explicitly removes global listeners, cancels in-flight requests, unregisters from global registries, and stops param signal tracking. Idempotent.
+
+### Fixed
+
+- **Memory leak in `createCommand`**: the `window.addEventListener("online", ...)` listener registered by `queueOffline` mode was never removed. `dispose()` now calls `removeEventListener` and cleans up `_globalCommandQueues`, `_globalLatestControllers`, and `_globalReplayLocks`.
+- **`_stableStringify` robustness**:
+  - `Date` is now serialized via `.toISOString()` (always UTC, timezone-safe).
+  - `Map` entries are sorted deterministically regardless of insertion order.
+  - `Set` values are sorted deterministically regardless of insertion order.
+  - Circular references now throw a `TypeError` instead of causing a stack overflow (uses a `WeakSet` for tracking).
+- **`invalidateQueries` and `clearQueryCache`** now clear in-flight requests so subscribers start a fresh fetch instead of sharing a stale promise.
+
 ## 1.4.2
 
 ### Added

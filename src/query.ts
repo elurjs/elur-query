@@ -8,9 +8,11 @@ export interface QueryResult<T> {
     readonly data: Signal<T | undefined>;
     readonly error: Signal<unknown>;
     refetch(): void;
+    /** Remove from global registries and stop tracking param signals. */
+    dispose(): void;
 }
 
-export interface QueryOptions<P = void> {
+export interface QueryOptions<P = void, T = unknown> {
     /**
      * Time in ms that cached data is considered fresh.
      * While fresh, mounting will not trigger a background refetch.
@@ -33,6 +35,25 @@ export interface QueryOptions<P = void> {
      * @default undefined
      */
     params?: () => P;
+    /**
+     * Custom serializer for params used to build the effective cache key.
+     * When omitted, a built-in deterministic serializer is used that handles
+     * plain objects, arrays, Date, Map, Set and detects circular references.
+     * Provide your own to support exotic types or to optimize for hot paths.
+     */
+    serializeParams?: (params: unknown) => string;
+    /**
+     * When `true`, the previous data remains visible while a new fetch is in
+     * progress (e.g. after params change). Eliminates UI flicker.
+     * @default false
+     */
+    keepPreviousData?: boolean;
+    /**
+     * Data to show while a fetch is pending and no cached data is available.
+     * Can be a static value or a function receiving the previous data.
+     * @default undefined
+     */
+    placeholderData?: T | ((previousData: T | undefined) => T | undefined);
 }
 
 export interface QueryCacheOptions {
@@ -41,6 +62,11 @@ export interface QueryCacheOptions {
      * When omitted, the helpers operate on the exact base key.
      */
     params?: unknown;
+    /**
+     * Custom serializer matching the one used by `createQuery`.
+     * Ensures imperative helpers target the same effective key.
+     */
+    serializeParams?: (params: unknown) => string;
 }
 
 interface CacheEntry<T = unknown> {
@@ -91,22 +117,69 @@ function _setCacheEntry<T>(key: string, data: T): void {
 
 /**
  * Deterministic serialization of params used to build the effective cache key.
- * Object keys are sorted so `{ a, b }` and `{ b, a }` produce the same key.
+ *
+ * - Object keys are sorted so `{ a, b }` and `{ b, a }` produce the same key.
+ * - `Date` is serialized via `.toISOString()` (always UTC, timezone-safe).
+ * - `Map` and `Set` are serialized with sorted entries so equal structures
+ *   produce the same key regardless of insertion order.
+ * - Circular references throw a `TypeError` instead of causing a stack overflow.
  */
-function _stableStringify(value: unknown): string {
+function _stableStringify(value: unknown, seen: WeakSet<object> = new WeakSet()): string {
     if (value === undefined) return "";
-    if (value === null || typeof value !== "object") return JSON.stringify(value);
-    if (Array.isArray(value)) {
-        return `[${value.map(_stableStringify).join(",")}]`;
+    if (value === null) return "null";
+    if (typeof value !== "object") return JSON.stringify(value);
+
+    // Date — timezone-safe: toISOString() always returns UTC.
+    if (value instanceof Date) {
+        return JSON.stringify(value.toISOString());
     }
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj).sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${_stableStringify(obj[k])}`).join(",")}}`;
+
+    // Map — stable: entries sorted by serialized key.
+    if (value instanceof Map) {
+        const entries = Array.from(value.entries()).sort(([a], [b]) => {
+            const sa = _stableStringify(a, seen);
+            const sb = _stableStringify(b, seen);
+            return sa < sb ? -1 : sa > sb ? 1 : 0;
+        });
+        return `Map([${entries
+            .map(([k, v]) => `[${_stableStringify(k, seen)},${_stableStringify(v, seen)}]`)
+            .join(",")}])`;
+    }
+
+    // Set — stable: values sorted by serialized form.
+    if (value instanceof Set) {
+        const arr = Array.from(value).sort((a, b) => {
+            const sa = _stableStringify(a, seen);
+            const sb = _stableStringify(b, seen);
+            return sa < sb ? -1 : sa > sb ? 1 : 0;
+        });
+        return `Set([${arr.map((v) => _stableStringify(v, seen)).join(",")}])`;
+    }
+
+    // Circular reference guard — throw instead of stack overflow.
+    if (seen.has(value as object)) {
+        throw new TypeError("Cannot serialize circular structure in query params");
+    }
+    seen.add(value as object);
+
+    try {
+        if (Array.isArray(value)) {
+            return `[${value.map((v) => _stableStringify(v, seen)).join(",")}]`;
+        }
+        const obj = value as Record<string, unknown>;
+        const keys = Object.keys(obj).sort();
+        return `{${keys
+            .map((k) => `${JSON.stringify(k)}:${_stableStringify(obj[k], seen)}`)
+            .join(",")}}`;
+    } finally {
+        seen.delete(value as object);
+    }
 }
 
 function _effectiveKey(key: string, options?: QueryCacheOptions): string {
     if (!options || options.params === undefined) return key;
-    return `${key}::${_stableStringify(options.params)}`;
+    const serialize = options.serializeParams ?? _stableStringify;
+    return `${key}::${serialize(options.params)}`;
 }
 
 function _isFresh(key: string, staleTime: number): boolean {
@@ -117,6 +190,35 @@ function _isFresh(key: string, staleTime: number): boolean {
 
 const _queryRegistry = new Map<string, Set<() => void>>();
 const _querySyncRegistry = new Map<string, Set<QuerySyncHandler>>();
+
+// ─── Single-flight: in-flight request deduplication ────────────────────────
+// When two components mount the same query key simultaneously with an empty
+// cache, only one fetch is fired. Both subscribers share the same promise.
+const _inflightRequests = new Map<string, Promise<unknown>>();
+
+function _getInflight<T>(key: string, factory: () => Promise<T>): Promise<T> {
+    const existing = _inflightRequests.get(key);
+    if (existing) return existing as Promise<T>;
+    const p = factory();
+    _inflightRequests.set(key, p);
+    p.then(
+        () => {
+            if (_inflightRequests.get(key) === p) _inflightRequests.delete(key);
+        },
+        () => {
+            if (_inflightRequests.get(key) === p) _inflightRequests.delete(key);
+        }
+    );
+    return p;
+}
+
+function _clearInflight(key: string, prefix: string): void {
+    for (const k of Array.from(_inflightRequests.keys())) {
+        if (k === key || k.startsWith(prefix)) {
+            _inflightRequests.delete(k);
+        }
+    }
+}
 
 const _queryLifecycleCleanup = new FinalizationRegistry<{
     key: string;
@@ -162,10 +264,12 @@ export function clearQueryCache(key?: string): void {
             _queryCache.delete(k);
             _notifyQuerySync(k);
         }
+        _clearInflight(key, prefix);
     } else {
         const keys = Array.from(_queryCache.keys());
         _queryCache.clear();
         for (const k of keys) _notifyQuerySync(k);
+        _inflightRequests.clear();
         if (_gcTimer !== null) {
             clearInterval(_gcTimer);
             _gcTimer = null;
@@ -234,6 +338,9 @@ export function invalidateQueries(key: string): void {
         _queryCache.delete(k);
         _notifyQuerySync(k);
     }
+    // Clear in-flight requests so subscribers start a fresh fetch instead of
+    // sharing a stale promise that was started before the invalidation.
+    _clearInflight(key, prefix);
     for (const [k, handlers] of _queryRegistry) {
         if (k === key || k.startsWith(prefix)) {
             for (const run of handlers) run();
@@ -257,9 +364,18 @@ const _queryEffectCleanup = new FinalizationRegistry<() => void>((dispose) => {
 export function createQuery<T, P = void>(
     key: string,
     asyncFn: (params: P) => Promise<T>,
-    options: QueryOptions<P> = {}
+    options: QueryOptions<P, T> = {}
 ): QueryResult<T> {
-    const { staleTime = 0, refetchOnMount = "always", params } = options;
+    const {
+        staleTime = 0,
+        refetchOnMount = "always",
+        params,
+        serializeParams,
+        keepPreviousData = false,
+        placeholderData,
+    } = options;
+
+    const _serialize = serializeParams ?? _stableStringify;
 
     const status = signal<QueryStatus>("pending");
     const data = signal<T | undefined>(undefined);
@@ -268,20 +384,30 @@ export function createQuery<T, P = void>(
     let currentKey = key;
     let currentParams = undefined as P;
     let unbind: (() => void) | null = null;
+    let effectDispose: (() => void) | null = null;
+    let disposed = false;
+
+    const _resolvePlaceholder = (): T | undefined => {
+        if (typeof placeholderData === "function") {
+            return (placeholderData as (prev: T | undefined) => T | undefined)(data.peek());
+        }
+        return placeholderData as T | undefined;
+    };
 
     const _fetch = (k: string, p: P): void => {
-        asyncFn(p).then(
+        // Single-flight: share the in-flight promise across subscribers.
+        _getInflight<T>(k, () => asyncFn(p)).then(
             (result) => {
                 // Ignore responses from a key that is no longer current
                 // (e.g. params changed while a request was in flight).
-                if (k !== currentKey) return;
+                if (k !== currentKey || disposed) return;
                 _setCacheEntry(k, result);
                 data.value = result;
                 error.value = undefined;
                 status.value = "success";
             },
             (err) => {
-                if (k !== currentKey) return;
+                if (k !== currentKey || disposed) return;
                 error.value = err;
                 status.value = "error";
             }
@@ -290,8 +416,14 @@ export function createQuery<T, P = void>(
 
     const _run = (k: string, p: P): void => {
         if (status.peek() === "pending") {
-            data.value = undefined;
             error.value = undefined;
+            if (keepPreviousData && data.peek() !== undefined) {
+                // Keep previous data visible while fetching.
+            } else if (placeholderData !== undefined) {
+                data.value = _resolvePlaceholder();
+            } else {
+                data.value = undefined;
+            }
         }
         _fetch(k, p);
     };
@@ -311,9 +443,19 @@ export function createQuery<T, P = void>(
                 error.value = undefined;
                 return;
             }
-            status.value = "pending";
-            error.value = undefined;
-            data.value = undefined;
+            // Cache miss — apply keepPreviousData / placeholderData logic.
+            if (keepPreviousData && data.peek() !== undefined) {
+                status.value = "pending";
+                error.value = undefined;
+            } else if (placeholderData !== undefined) {
+                status.value = "pending";
+                error.value = undefined;
+                data.value = _resolvePlaceholder();
+            } else {
+                status.value = "pending";
+                error.value = undefined;
+                data.value = undefined;
+            }
         };
 
         if (!_querySyncRegistry.has(k)) _querySyncRegistry.set(k, new Set());
@@ -337,14 +479,27 @@ export function createQuery<T, P = void>(
             data.value = cached.data;
             error.value = undefined;
         } else {
-            status.value = "pending";
-            data.value = undefined;
-            error.value = undefined;
+            // No cache for this key — decide what to show while fetching.
+            if (keepPreviousData && data.peek() !== undefined) {
+                status.value = "pending";
+                error.value = undefined;
+                // data stays as-is (previous value).
+            } else if (placeholderData !== undefined) {
+                status.value = "pending";
+                error.value = undefined;
+                data.value = _resolvePlaceholder();
+            } else {
+                status.value = "pending";
+                data.value = undefined;
+                error.value = undefined;
+            }
         }
 
         const fresh = _isFresh(k, staleTime);
         if (!cached) {
-            _run(k, p);
+            // _activate already set up placeholder/keepPreviousData above,
+            // so call _fetch directly instead of _run (which would re-apply).
+            _fetch(k, p);
         } else if (refetchOnMount === false) {
             // skip
         } else if (refetchOnMount === "stale" && fresh) {
@@ -357,9 +512,9 @@ export function createQuery<T, P = void>(
     };
 
     if (params) {
-        const dispose = effect(() => {
+        effectDispose = effect(() => {
             const p = params();
-            const k = `${key}::${_stableStringify(p)}`;
+            const k = `${key}::${_serialize(p)}`;
             // No change in effective key — dedupe, keep current binding.
             if (unbind && k === currentKey) return;
             if (unbind) unbind();
@@ -368,13 +523,26 @@ export function createQuery<T, P = void>(
             unbind = _bind(k, p);
             _activate(k, p);
         });
-        _queryEffectCleanup.register(status as object, dispose);
+        _queryEffectCleanup.register(status as object, effectDispose);
     } else {
         currentKey = key;
         currentParams = undefined as P;
         unbind = _bind(key, currentParams);
         _activate(key, currentParams);
     }
+
+    const _dispose = (): void => {
+        if (disposed) return;
+        disposed = true;
+        if (unbind) {
+            unbind();
+            unbind = null;
+        }
+        if (effectDispose) {
+            effectDispose();
+            effectDispose = null;
+        }
+    };
 
     return {
         key: currentKey,
@@ -383,7 +551,9 @@ export function createQuery<T, P = void>(
         error,
         refetch: () => {
             _queryCache.delete(currentKey);
+            _inflightRequests.delete(currentKey);
             _run(currentKey, currentParams);
         },
+        dispose: _dispose,
     };
 }

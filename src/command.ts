@@ -61,9 +61,6 @@ export interface CommandOptions<TVariables, TResult, TContext = unknown> {
         variables: TVariables,
         context: TContext | undefined
     ) => void | Promise<void>;
-    /**
-     * Experimental v1.3 queue-offline options.
-     */
     offline?: OfflineQueueOptions<TVariables, TResult>;
 }
 

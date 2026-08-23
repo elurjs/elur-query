@@ -10,10 +10,6 @@ import {
     type CommandQueueAdapter,
 } from "../index";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fix #1 — Single-Flight Request Deduplication
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("Fix #1: Single-Flight Request Deduplication", () => {
     beforeEach(() => clearQueryCache());
 
@@ -21,7 +17,6 @@ describe("Fix #1: Single-Flight Request Deduplication", () => {
         let fetchCalls = 0;
         const fetcher = vi.fn(async () => {
             fetchCalls++;
-            // Simulate network latency so both queries are live at the same time.
             await new Promise((r) => setTimeout(r, 20));
             return { hello: "world" };
         });
@@ -109,7 +104,6 @@ describe("Fix #1: Single-Flight Request Deduplication", () => {
             return calls;
         });
 
-        // Don't wait — invalidate while first fetch is still in-flight.
         await new Promise((r) => setTimeout(r, 5));
         invalidateQueries("sf/invalidate");
         resolveFirst();
@@ -145,10 +139,6 @@ describe("Fix #1: Single-Flight Request Deduplication", () => {
     });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fix #2 — Memory Leak: dispose() + online listener cleanup
-// ─────────────────────────────────────────────────────────────────────────────
-
 function createMemoryAdapter<T>(): CommandQueueAdapter<T> {
     let items: Array<{
         id: string;
@@ -174,12 +164,9 @@ describe("Fix #2: Memory Leak — dispose() and listener cleanup", () => {
 
         q.dispose();
 
-        // After dispose, invalidation should not try to call the disposed query.
-        // This verifies the query is removed from _queryRegistry.
         invalidateQueries("dispose/q");
         await new Promise((r) => setTimeout(r, 10));
 
-        // Data should remain 42 (not refetched) because the query was disposed.
         expect(q.data.value).toBe(42);
     });
 
@@ -212,7 +199,6 @@ describe("Fix #2: Memory Leak — dispose() and listener cleanup", () => {
 
         q.dispose();
 
-        // Changing the signal after dispose should NOT trigger a new fetch.
         id.value = 2;
         await new Promise((r) => setTimeout(r, 20));
 
@@ -236,13 +222,11 @@ describe("Fix #2: Memory Leak — dispose() and listener cleanup", () => {
             }
         );
 
-        // Verify listener was registered.
         const onlineCalls = addSpy.mock.calls.filter(([event]) => event === "online");
         expect(onlineCalls.length).toBe(1);
 
         cmd.dispose();
 
-        // Verify listener was removed.
         const removeOnlineCalls = removeSpy.mock.calls.filter(([event]) => event === "online");
         expect(removeOnlineCalls.length).toBe(1);
 
@@ -331,10 +315,6 @@ describe("Fix #2: Memory Leak — dispose() and listener cleanup", () => {
     });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fix #3 — keepPreviousData / placeholderData
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("Fix #3: keepPreviousData / placeholderData", () => {
     beforeEach(() => clearQueryCache());
 
@@ -355,20 +335,16 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
             }
         );
 
-        // Initial fetch.
         await new Promise((r) => setTimeout(r, 30));
         expect(q.data.value).toEqual(["item-1-1", "item-1-2"]);
         expect(q.status.value).toBe("success");
 
-        // Switch page — data should NOT be cleared.
         page.value = 2;
         await Promise.resolve(); // let effect fire
 
-        // While fetching, previous data should still be visible.
         expect(q.status.value).toBe("pending");
         expect(q.data.value).toEqual(["item-1-1", "item-1-2"]);
 
-        // After fetch completes, new data appears.
         await new Promise((r) => setTimeout(r, 30));
         expect(q.status.value).toBe("success");
         expect(q.data.value).toEqual(["item-2-1", "item-2-2"]);
@@ -385,7 +361,6 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
             },
             {
                 params: () => ({ page: page.value }),
-                // keepPreviousData defaults to false
             }
         );
 
@@ -395,7 +370,6 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
         page.value = 2;
         await Promise.resolve();
 
-        // Data should be cleared immediately (the flicker we're fixing).
         expect(q.status.value).toBe("pending");
         expect(q.data.value).toBeUndefined();
     });
@@ -410,7 +384,6 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
             { placeholderData: ["loading..."] }
         );
 
-        // Before fetch completes, placeholder should be visible.
         expect(q.data.value).toEqual(["loading..."]);
         expect(q.status.value).toBe("pending");
 
@@ -434,13 +407,11 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
             }
         );
 
-        // First mount — no previous data, uses init placeholder.
         expect(q.data.value).toEqual(["init-placeholder"]);
 
         await new Promise((r) => setTimeout(r, 30));
         expect(q.data.value).toEqual(["real-1"]);
 
-        // Change page — previous data is available to placeholder function.
         page.value = 2;
         await Promise.resolve();
         expect(q.data.value).toEqual(["real-1", "placeholder"]);
@@ -465,13 +436,11 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
             }
         );
 
-        // First mount — no previous data, so placeholder is used.
         expect(q.data.value).toEqual(["fallback-placeholder"]);
 
         await new Promise((r) => setTimeout(r, 30));
         expect(q.data.value).toEqual(["real-1"]);
 
-        // Change page — keepPreviousData takes priority over placeholder.
         page.value = 2;
         await Promise.resolve();
         expect(q.data.value).toEqual(["real-1"]); // previous data, not placeholder
@@ -519,11 +488,9 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
         expect(el.querySelectorAll("li").length).toBe(2);
         expect(el.querySelector("li")!.textContent!.trim()).toBe("row-1-a");
 
-        // Change page.
         page.value = 2;
         await Promise.resolve();
 
-        // While fetching, the list should still show 2 items (no flicker).
         expect(el.querySelectorAll("li").length).toBe(2);
         expect(el.querySelector("li")!.textContent!.trim()).toBe("row-1-a");
 
@@ -532,10 +499,6 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
         expect(el.querySelector("li")!.textContent!.trim()).toBe("row-2-a");
     });
 });
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Fix #4 — Robust _stableStringify (circular, Map, Set, Date) + custom serializeParams
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe("Fix #4: Robust _stableStringify", () => {
     beforeEach(() => clearQueryCache());
@@ -581,10 +544,8 @@ describe("Fix #4: Robust _stableStringify", () => {
         await new Promise((r) => setTimeout(r, 10));
         expect(q.data.value).toBe("2024-06-15T12:00:00.000Z");
 
-        // Same instant, different Date object → same cache key, no refetch.
         s.value = d2;
         await new Promise((r) => setTimeout(r, 10));
-        // Should still be the same cached result.
         expect(q.data.value).toBe("2024-06-15T12:00:00.000Z");
     });
 
@@ -615,7 +576,6 @@ describe("Fix #4: Robust _stableStringify", () => {
         await new Promise((r) => setTimeout(r, 10));
         expect(calls).toBe(1);
 
-        // Same content, different insertion order → same key → no refetch.
         s.value = m2;
         await new Promise((r) => setTimeout(r, 10));
         expect(calls).toBe(1);
@@ -686,7 +646,6 @@ describe("Fix #4: Robust _stableStringify", () => {
         await new Promise((r) => setTimeout(r, 10));
         expect(q.data.value).toBe("val:abc");
 
-        // Use the same custom serializer for imperative cache access.
         setQueryData("ss/custom-cache", "manual-set", {
             params: { id: "abc" },
             serializeParams: customSerializer,

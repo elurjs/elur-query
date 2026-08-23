@@ -20,8 +20,6 @@ import {
     type CommandQueueAdapter,
 } from "../index";
 
-// ─── Shared mock API ──────────────────────────────────────────────────────────
-
 type MockFn<T extends (...args: never[]) => unknown> = ReturnType<typeof vi.fn<T>>;
 
 interface UserListResult {
@@ -103,8 +101,6 @@ function createMemoryAdapter<T>(): CommandQueueAdapter<T> {
     };
 }
 
-// ─── Integration Scenarios ───────────────────────────────────────────────────
-
 describe("Real-World Integration", () => {
     let api: MockApi;
 
@@ -114,9 +110,6 @@ describe("Real-World Integration", () => {
     });
 
     it("Scenario A: Dashboard with 5 widgets sharing the same user query (single-flight)", async () => {
-        // 5 different components all need the same user list.
-        // Without single-flight, this would fire 5 API calls.
-        // With single-flight, only 1 call is made.
 
         class UserWidget extends NixComponent {
             private q = createQuery(
@@ -147,15 +140,12 @@ describe("Real-World Integration", () => {
             return el;
         });
 
-        // While loading, all show loading state.
         expect(widgets.every((el) => el.querySelector(".loading"))).toBe(true);
 
         await new Promise((r) => setTimeout(r, 25));
 
-        // All widgets show the same data.
         expect(widgets.every((el) => el.querySelector(".count")?.textContent === "5")).toBe(true);
 
-        // CRITICAL: only ONE API call was made for all 5 widgets.
         expect(api.fetchUsers).toHaveBeenCalledTimes(1);
     });
 
@@ -215,10 +205,8 @@ describe("Real-World Integration", () => {
         expect(el.querySelectorAll(".uid").length).toBe(5);
         expect(el.querySelector(".uid")!.textContent!.trim()).toBe("100");
 
-        // Change to page 2.
         page.value = 2;
 
-        // While fetching page 2, page 1 data should still be visible (no flicker).
         await Promise.resolve();
         await Promise.resolve();
         expect(el.querySelectorAll(".uid").length).toBe(5);
@@ -226,13 +214,9 @@ describe("Real-World Integration", () => {
 
         await new Promise((r) => setTimeout(r, 25));
 
-        // Now page 2 data is shown.
         expect(el.querySelectorAll(".uid").length).toBe(5);
         expect(el.querySelector(".uid")!.textContent!.trim()).toBe("200");
 
-        // Verify the render log shows no "empty" state between page changes.
-        // The initial mount may show "none" once (no previous data), but after
-        // the first successful load, there should be zero empty renders.
         const firstSuccessIdx = renderLog.findIndex((r) => r.startsWith("success:"));
         const rendersAfterFirstLoad = renderLog.slice(firstSuccessIdx + 1);
         const emptyRenders = rendersAfterFirstLoad.filter((r) => r.includes("none"));
@@ -256,7 +240,6 @@ describe("Real-World Integration", () => {
             }
         );
 
-        // User is offline — create 3 orders.
         online = false;
         for (let i = 1; i <= 3; i++) {
             await expect(createOrder.executeAsync({ id: `ORD-${i}`, total: i * 10 }))
@@ -266,17 +249,14 @@ describe("Real-World Integration", () => {
         expect(createOrder.queuedCount.value).toBe(3);
         expect(api.createOrder).not.toHaveBeenCalled();
 
-        // User comes back online — dispatch 'online' event to trigger replay.
         online = true;
         window.dispatchEvent(new Event("online"));
 
-        // Wait for replay to complete.
         await new Promise((r) => setTimeout(r, 80));
 
         expect(api.createOrder).toHaveBeenCalledTimes(3);
         expect(createOrder.queuedCount.value).toBe(0);
 
-        // Clean up.
         createOrder.dispose();
     });
 
@@ -301,14 +281,10 @@ describe("Real-World Integration", () => {
             events: [`event-${filterDate.getTime()}-2`],
         });
 
-        // Add a tag — should refetch.
         tags.value = new Set(["urgent", "production", "critical"]);
         await new Promise((r) => setTimeout(r, 20));
         expect(q.data.value!.count).toBe(3);
 
-        // Remove back to 2 tags — should refetch and use cache from before? No,
-        // this is a new Set object, but same content as the first. Let's verify
-        // it refetches because the serialized key is different (3 vs 2 tags).
         // Actually, going back to 2 tags should hit the cache from the first fetch.
         tags.value = new Set(["urgent", "production"]);
         await new Promise((r) => setTimeout(r, 20));
@@ -317,7 +293,6 @@ describe("Real-World Integration", () => {
     });
 
     it("Scenario E: Mutation with optimistic update + invalidation + single-flight refetch", async () => {
-        // Set up a query that multiple components share.
         let queryFetchCount = 0;
         const q1 = createQuery(
             "items/list",
@@ -343,7 +318,6 @@ describe("Real-World Integration", () => {
         expect(q1.data.value).toEqual([{ id: 1, title: "Original" }]);
         expect(q2.data.value).toEqual([{ id: 1, title: "Original" }]);
 
-        // Create a mutation with optimistic update.
         const addItem = createCommand(
             "items/create",
             async (item: { id: number; title: string }) => {
@@ -365,18 +339,15 @@ describe("Real-World Integration", () => {
             }
         );
 
-        // Execute mutation — optimistic update appears immediately.
         const promise = addItem.executeAsync({ id: 2, title: "New Item" });
         await Promise.resolve();
 
-        // Optimistic data visible in both queries immediately.
         expect(q1.data.value!.length).toBe(2);
         expect(q2.data.value!.length).toBe(2);
 
         await promise;
         await new Promise((r) => setTimeout(r, 20));
 
-        // After invalidation, both queries refetch — but single-flight means only 1 new fetch.
         const fetchesAfterMutation = queryFetchCount - 1;
         expect(fetchesAfterMutation).toBe(1); // single-flight dedup on refetch
     });
@@ -397,11 +368,9 @@ describe("Real-World Integration", () => {
             }
         );
 
-        // Start with "a"
         await Promise.resolve();
         await Promise.resolve();
 
-        // Rapidly change through b, c, d
         search.value = "b";
         await Promise.resolve();
         search.value = "c";
@@ -409,7 +378,6 @@ describe("Real-World Integration", () => {
         search.value = "d";
         await Promise.resolve();
 
-        // Resolve in order: a, b, c, d
         resolvers["a"]("result-a");
         resolvers["b"]("result-b");
         resolvers["c"]("result-c");
@@ -420,7 +388,6 @@ describe("Real-World Integration", () => {
         await Promise.resolve();
         await Promise.resolve();
 
-        // Only the latest param ("d") should be in the data signal.
         expect(q.data.value).toBe("result-d");
     });
 
@@ -444,8 +411,6 @@ describe("Real-World Integration", () => {
         await new Promise((r) => setTimeout(r, 20));
         expect(calls).toBe(1);
 
-        // Batch update: a and b change atomically.
-        // a=3, b=1 → sum=4, product=3 (different from sum=3, product=2)
         batch(() => {
             a.value = 3;
             b.value = 1;
@@ -497,20 +462,16 @@ describe("Real-World Integration", () => {
         expect(el.querySelector(".val")!.textContent!.trim()).toBe("1");
         expect(fetchCalls).toBe(1);
 
-        // Trigger mutation directly (avoids onclick binding evaluation issues).
         comp.cmd.execute(1);
         await new Promise((r) => setTimeout(r, 20));
 
-        // Invalidation caused a refetch.
         expect(fetchCalls).toBe(2);
         expect(el.querySelector(".val")!.textContent!.trim()).toBe("2");
     });
 
     it("Scenario I: Custom serializer for encrypted param keys", async () => {
-        // Simulate an app that uses hashed/encoded param keys.
         const customSerializer = (params: unknown): string => {
             const json = JSON.stringify(params);
-            // Simple "hash" for testing — just reverse the string.
             return json.split("").reverse().join("");
         };
 
@@ -528,7 +489,6 @@ describe("Real-World Integration", () => {
         await new Promise((r) => setTimeout(r, 15));
         expect(q.data.value).toBe("data:user-123");
 
-        // Imperative cache access with same serializer.
         setQueryData("custom-serial/user", "manual", {
             params: { id: "user-123" },
             serializeParams: customSerializer,
@@ -543,7 +503,6 @@ describe("Real-World Integration", () => {
         const queries: ReturnType<typeof createQuery>[] = [];
         const commands: ReturnType<typeof createCommand>[] = [];
 
-        // Create 10 queries and 5 offline commands.
         for (let i = 0; i < 10; i++) {
             queries.push(
                 createQuery(`cleanup/q${i}`, async () => i, { refetchOnMount: false })
@@ -569,27 +528,22 @@ describe("Real-World Integration", () => {
         const onlineListenersAdded = addSpy.mock.calls.filter(([e]) => e === "online").length;
         expect(onlineListenersAdded).toBe(5);
 
-        // Wait for all fetches to resolve before disposing.
         await new Promise((r) => setTimeout(r, 20));
         for (let i = 0; i < 10; i++) {
             expect(queries[i].data.value).toBe(i);
         }
 
-        // Dispose everything.
         queries.forEach((q) => q.dispose());
         commands.forEach((c) => c.dispose());
 
         const onlineListenersRemoved = removeSpy.mock.calls.filter(([e]) => e === "online").length;
         expect(onlineListenersRemoved).toBe(5);
 
-        // Verify queries are no longer in the registry by invalidating.
-        // If they were still registered, they'd refetch.
         for (let i = 0; i < 10; i++) {
             invalidateQueries(`cleanup/q${i}`);
         }
         await new Promise((r) => setTimeout(r, 20));
 
-        // Data should not have changed (queries were disposed, no refetch).
         for (let i = 0; i < 10; i++) {
             expect(queries[i].data.value).toBe(i);
         }

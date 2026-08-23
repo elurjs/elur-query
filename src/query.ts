@@ -191,9 +191,11 @@ function _isFresh(key: string, staleTime: number): boolean {
 const _queryRegistry = new Map<string, Set<() => void>>();
 const _querySyncRegistry = new Map<string, Set<QuerySyncHandler>>();
 
-// ─── Single-flight: in-flight request deduplication ────────────────────────
-// When two components mount the same query key simultaneously with an empty
-// cache, only one fetch is fired. Both subscribers share the same promise.
+/**
+ * Single-flight request deduplication: when two components mount the same
+ * query key simultaneously with an empty cache, only one fetch is fired.
+ * Both subscribers share the same promise.
+ */
 const _inflightRequests = new Map<string, Promise<unknown>>();
 
 function _getInflight<T>(key: string, factory: () => Promise<T>): Promise<T> {
@@ -418,7 +420,6 @@ export function createQuery<T, P = void>(
         if (status.peek() === "pending") {
             error.value = undefined;
             if (keepPreviousData && data.peek() !== undefined) {
-                // Keep previous data visible while fetching.
             } else if (placeholderData !== undefined) {
                 data.value = _resolvePlaceholder();
             } else {
@@ -443,7 +444,6 @@ export function createQuery<T, P = void>(
                 error.value = undefined;
                 return;
             }
-            // Cache miss — apply keepPreviousData / placeholderData logic.
             if (keepPreviousData && data.peek() !== undefined) {
                 status.value = "pending";
                 error.value = undefined;
@@ -479,11 +479,9 @@ export function createQuery<T, P = void>(
             data.value = cached.data;
             error.value = undefined;
         } else {
-            // No cache for this key — decide what to show while fetching.
             if (keepPreviousData && data.peek() !== undefined) {
                 status.value = "pending";
                 error.value = undefined;
-                // data stays as-is (previous value).
             } else if (placeholderData !== undefined) {
                 status.value = "pending";
                 error.value = undefined;
@@ -501,11 +499,8 @@ export function createQuery<T, P = void>(
             // so call _fetch directly instead of _run (which would re-apply).
             _fetch(k, p);
         } else if (refetchOnMount === false) {
-            // skip
         } else if (refetchOnMount === "stale" && fresh) {
-            // skip
         } else if (refetchOnMount === "always" && fresh && staleTime > 0) {
-            // skip
         } else {
             _fetch(k, p);
         }

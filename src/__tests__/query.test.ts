@@ -248,7 +248,6 @@ describe("createQuery with reactive params", () => {
         expect(data.value).toBe(20);
         expect(callCount).toBe(2);
 
-        // Revisit id=1 — served from cache, no new fetch.
         id.value = 1;
         await Promise.resolve();
         await Promise.resolve();
@@ -274,7 +273,6 @@ describe("createQuery with reactive params", () => {
         await Promise.resolve();
         expect(callCount).toBe(1);
 
-        // a+b stays 3 (atomic) → same key → no refetch.
         batch(() => {
             a.value = 0;
             b.value = 3;
@@ -297,11 +295,9 @@ describe("createQuery with reactive params", () => {
             { params: () => ({ id: id.value }) }
         );
 
-        // Switch to id=2 before id=1 resolves.
         id.value = 2;
         await Promise.resolve();
 
-        // Resolve the stale id=1 request last.
         resolvers[2]("v2");
         await Promise.resolve();
         await Promise.resolve();
@@ -310,7 +306,6 @@ describe("createQuery with reactive params", () => {
         resolvers[1]("v1");
         await Promise.resolve();
         await Promise.resolve();
-        // Stale response must not overwrite current data.
         expect(data.value).toBe("v2");
     });
 
@@ -401,7 +396,6 @@ describe("createQuery with reactive params", () => {
 
         expect(getQueryData<string>("events/clear-test", { params: { id: "abc" } })).toBeUndefined();
 
-        // Remounting/reattivating should fetch again because cache is gone.
         q.refetch();
         await Promise.resolve();
         await Promise.resolve();

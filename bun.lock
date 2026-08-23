@@ -5,7 +5,7 @@
     "": {
       "name": "@deijose/nix-query",
       "devDependencies": {
-        "@deijose/nix-js": "3.0.3",
+        "@deijose/nix-js": "3.2.1",
         "happy-dom": "^20.8.3",
         "terser": "^5.46.0",
         "typescript": "~5.9.3",
@@ -18,7 +18,7 @@
     },
   },
   "packages": {
-    "@deijose/nix-js": ["@deijose/nix-js@3.0.3", "", {}, "sha512-ZXzTgmIIOyOQtJwPVjIiA1/zFVXX7sXPUs1CSj9gruPbbz3A9txGnTNTNmPLWl1MI8o1Gz/ciboHucy9XBIEEQ=="],
+    "@deijose/nix-js": ["@deijose/nix-js@3.2.1", "", {}, "sha512-QpaWQijyTEu3y5pmumxRw1lmv+Jkx6N+5XFQhYZx4/aINEahgh9P4IlOkjt3YJGotUfl/JcxcOA42pErdwIUAQ=="],
 
     "@emnapi/core": ["@emnapi/core@1.9.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.0", "tslib": "^2.4.0" } }, "sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA=="],
 

@@ -8,7 +8,7 @@
  * These tests exercise all four fixes together, the way a real app would.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { html, mount, NixComponent, signal, batch } from "@deijose/nix-js";
+import { html, mount, ElurComponent, signal, batch } from "@elurjs/core";
 import {
     createQuery,
     createCommand,
@@ -111,7 +111,7 @@ describe("Real-World Integration", () => {
 
     it("Scenario A: Dashboard with 5 widgets sharing the same user query (single-flight)", async () => {
 
-        class UserWidget extends NixComponent {
+        class UserWidget extends ElurComponent {
             private q = createQuery(
                 "dashboard/users",
                 () => api.fetchUsers({ page: 1, filter: "all" }),
@@ -153,7 +153,7 @@ describe("Real-World Integration", () => {
         const page = signal(1);
         let renderLog: string[] = [];
 
-        class PaginatedTable extends NixComponent {
+        class PaginatedTable extends ElurComponent {
             private q = createQuery(
                 "table/users",
                 () => api.fetchUsers({ page: page.value, filter: "all" }),
@@ -423,7 +423,7 @@ describe("Real-World Integration", () => {
     it("Scenario H: Full lifecycle — mount, fetch, mutate, invalidate, dispose", async () => {
         let fetchCalls = 0;
 
-        class FeatureComponent extends NixComponent {
+        class FeatureComponent extends ElurComponent {
             q = createQuery(
                 "lifecycle/data",
                 async () => {

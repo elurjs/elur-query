@@ -1,4 +1,4 @@
-import { signal, effect, type Signal } from "@deijose/nix-js";
+import { signal, effect, type Signal } from "@elurjs/core";
 
 export type QueryStatus = "pending" | "success" | "error";
 

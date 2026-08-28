@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { html, mount, NixComponent, signal, batch } from "@deijose/nix-js";
+import { html, mount, ElurComponent, signal, batch } from "@elurjs/core";
 import {
     createQuery,
     invalidateQueries,
@@ -36,7 +36,7 @@ describe("createQuery / invalidateQueries", () => {
     });
 
     it("fetches and renders data by key", async () => {
-        class TestListComp extends NixComponent {
+        class TestListComp extends ElurComponent {
             private query = createQuery("test-items", () => Promise.resolve(["a", "b", "c"]));
 
             render() {
@@ -61,7 +61,7 @@ describe("createQuery / invalidateQueries", () => {
     it("re-fetches when invalidateQueries is called with matching key", async () => {
         let callCount = 0;
 
-        class CounterComp extends NixComponent {
+        class CounterComp extends ElurComponent {
             private query = createQuery("counter-query", () => {
                 callCount++;
                 return Promise.resolve(callCount);
@@ -95,7 +95,7 @@ describe("createQuery / invalidateQueries", () => {
         let countA = 0;
         let countB = 0;
 
-        class CompA extends NixComponent {
+        class CompA extends ElurComponent {
             q = createQuery("key-a", () => {
                 countA++;
                 return Promise.resolve("a");
@@ -105,7 +105,7 @@ describe("createQuery / invalidateQueries", () => {
             }
         }
 
-        class CompB extends NixComponent {
+        class CompB extends ElurComponent {
             q = createQuery("key-b", () => {
                 countB++;
                 return Promise.resolve("b");
@@ -130,7 +130,7 @@ describe("createQuery / invalidateQueries", () => {
         let count = 0;
         let refetchFn!: () => void;
 
-        class RefetchComp extends NixComponent {
+        class RefetchComp extends ElurComponent {
             q = createQuery("manual-test", () => {
                 count++;
                 return Promise.resolve(count);
@@ -418,7 +418,7 @@ describe("Query Cache Utils & Garbage Collection", () => {
         let fetchCountA = 0;
         let fetchCountB = 0;
 
-        class CompA extends NixComponent {
+        class CompA extends ElurComponent {
             q = createQuery(
                 "k1",
                 () => {
@@ -432,7 +432,7 @@ describe("Query Cache Utils & Garbage Collection", () => {
             }
         }
 
-        class CompB extends NixComponent {
+        class CompB extends ElurComponent {
             q = createQuery(
                 "k2",
                 () => {
@@ -473,7 +473,7 @@ describe("Query Cache Utils & Garbage Collection", () => {
         setQueryCacheTime(10);
         let fetchCount = 0;
 
-        class GcComp extends NixComponent {
+        class GcComp extends ElurComponent {
             q = createQuery(
                 "gc-test",
                 () => {

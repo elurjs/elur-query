@@ -1,6 +1,6 @@
-# Proximos Pasos de Nix Query
+# Proximos Pasos de Elur Query
 
-Este documento define el plan de evolucion para `@deijose/nix-query` siguiendo una convencion CQRS clara:
+Este documento define el plan de evolucion para `@elurjs/query` siguiendo una convencion CQRS clara:
 
 - Lectura: `createQuery`
 - Escritura: `createCommand`

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { html, mount, NixComponent, signal } from "@deijose/nix-js";
+import { html, mount, ElurComponent, signal } from "@elurjs/core";
 import {
     createQuery,
     createCommand,
@@ -452,7 +452,7 @@ describe("Fix #3: keepPreviousData / placeholderData", () => {
     it("keepPreviousData works with real DOM rendering (no flicker)", async () => {
         const page = signal(1);
 
-        class PaginatedList extends NixComponent {
+        class PaginatedList extends ElurComponent {
             private q = createQuery<string[], { page: number }>(
                 "kp/dom",
                 async ({ page }) => {

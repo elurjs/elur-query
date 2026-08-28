@@ -9,16 +9,16 @@ export default defineConfig({
         sourcemap: true,
         lib: {
             entry: resolve("src/index.ts"),
-            name: "NixQuery",
+            name: "ElurQuery",
             formats: ["es", "cjs"],
-            fileName: (format) => (format === "cjs" ? "nix-query.cjs" : "nix-query.js"),
+            fileName: (format) => (format === "cjs" ? "elur-query.cjs" : "elur-query.js"),
         },
         rollupOptions: {
-            external: ["@deijose/nix-js"],
+            external: ["@elurjs/core"],
             output: {
                 preserveModules: false,
                 globals: {
-                    "@deijose/nix-js": "NixJs",
+                    "@elurjs/core": "ElurJs",
                 },
             },
         },

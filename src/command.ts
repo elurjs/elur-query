@@ -1,4 +1,4 @@
-import { computed, signal, type Signal } from "@deijose/nix-js";
+import { computed, signal, type Signal } from "@elurjs/core";
 import { invalidateQueries } from "./query";
 
 export type CommandStatus = "idle" | "pending" | "success" | "error" | "queued";

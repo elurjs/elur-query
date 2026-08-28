@@ -1,9 +1,9 @@
-# Nix Query
+# Elur Query
 
-[![npm version](https://img.shields.io/npm/v/@deijose/nix-query.svg)](https://www.npmjs.com/package/@deijose/nix-query)
+[![npm version](https://img.shields.io/npm/v/@elurjs/query.svg)](https://www.npmjs.com/package/@elurjs/query)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-CQRS-style data utilities for Nix.js.
+CQRS-style data utilities for Elur.
 
 - Queries (read): `createQuery`
 - Commands (write): `createCommand`
@@ -11,16 +11,16 @@ CQRS-style data utilities for Nix.js.
 ## Installation
 
 ```bash
-npm install @deijose/nix-js @deijose/nix-query
+npm install @elurjs/core @elurjs/query
 ```
 
 ## Query Example
 
 ```ts
-import { html, NixComponent } from "@deijose/nix-js";
-import { createQuery } from "@deijose/nix-query";
+import { html, ElurComponent } from "@elurjs/core";
+import { createQuery } from "@elurjs/query";
 
-class PostsPage extends NixComponent {
+class PostsPage extends ElurComponent {
   private q = createQuery("posts", () => fetch("/api/posts").then((r) => r.json()));
 
   render() {
@@ -44,8 +44,8 @@ refetches automatically. Each distinct params value is cached independently,
 so revisiting previous params serves cached data instantly.
 
 ```ts
-import { signal } from "@deijose/nix-js";
-import { createQuery } from "@deijose/nix-query";
+import { signal } from "@elurjs/core";
+import { createQuery } from "@elurjs/query";
 
 const search = signal("");
 const page = signal(1);
@@ -62,7 +62,7 @@ const posts = createQuery(
 );
 
 // Changing any tracked signal triggers an automatic refetch under a new key.
-search.value = "nix";
+search.value = "elur";
 ```
 
 Notes:
@@ -178,7 +178,7 @@ cmd.dispose(); // removes the "online" event listener and cleans global state
 ### Cache Writes (v1.2)
 
 ```ts
-import { getQueryData, setQueryData, updateQueryData } from "@deijose/nix-query";
+import { getQueryData, setQueryData, updateQueryData } from "@elurjs/query";
 
 const users = getQueryData<{ id: number; name: string }[]>("users/list");
 
@@ -192,7 +192,7 @@ updateQueryData("users/list", (current = []) =>
 ## Command Example
 
 ```ts
-import { createCommand } from "@deijose/nix-query";
+import { createCommand } from "@elurjs/query";
 
 const saveProfile = createCommand(
   "profile/save",
@@ -235,7 +235,7 @@ await saveProfile.executeAsync({ name: "Deiver" });
 ### Optimistic Rollback (v1.2)
 
 ```ts
-import { createCommand, getQueryData, setQueryData } from "@deijose/nix-query";
+import { createCommand, getQueryData, setQueryData } from "@elurjs/query";
 
 type Item = { id: number; title: string };
 
@@ -268,13 +268,13 @@ import {
   createCommand,
   type CommandQueueAdapter,
   type OfflineCommandEntry,
-} from "@deijose/nix-query";
+} from "@elurjs/query";
 
 type CreateOrderInput = { id: string; total: number };
 
 class LocalStorageQueueAdapter
   implements CommandQueueAdapter<CreateOrderInput> {
-  private key = "nix-query:offline-commands";
+  private key = "elur-query:offline-commands";
 
   private read(): OfflineCommandEntry<CreateOrderInput>[] {
     const raw = localStorage.getItem(this.key);

@@ -552,3 +552,21 @@ export function createQuery<T, P = void>(
         dispose: _dispose,
     };
 }
+
+/**
+ * @internal — Debug accessor for `@elurjs/query/devtools`. Not part of the
+ * public API and not exported from the package index.
+ */
+export function _debugQueryInternals(): {
+    cache: Map<string, CacheEntry>;
+    inflight: Map<string, Promise<unknown>>;
+    cacheTime: number;
+    activeQueryCount: number;
+} {
+    return {
+        cache: _queryCache,
+        inflight: _inflightRequests,
+        cacheTime: _cacheTime,
+        activeQueryCount: _queryRegistry.size,
+    };
+}

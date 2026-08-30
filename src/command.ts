@@ -590,3 +590,19 @@ export function createCommand<TVariables, TResult, TContext = unknown>(
         dispose,
     };
 }
+
+/**
+ * @internal — Debug accessor for `@elurjs/query/devtools`. Not part of the
+ * public API and not exported from the package index.
+ */
+export function _debugCommandInternals(): {
+    queues: Map<string, Promise<unknown>>;
+    latestControllers: Map<string, AbortController>;
+    replayLocks: Set<string>;
+} {
+    return {
+        queues: _globalCommandQueues,
+        latestControllers: _globalLatestControllers,
+        replayLocks: _globalReplayLocks,
+    };
+}

@@ -9,7 +9,8 @@
         "rootDir": "src"
     },
     "include": [
-        "src/index.ts"
+        "src/index.ts",
+        "src/devtools.ts"
     ],
     "exclude": [
         "src/__tests__"

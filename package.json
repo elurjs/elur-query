@@ -1,6 +1,6 @@
 {
   "name": "@elurjs/query",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Query and cache utilities for Elur",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -18,6 +18,11 @@
       "import": "./dist/lib/elur-query.js",
       "require": "./dist/lib/elur-query.cjs",
       "types": "./dist/lib/index.d.ts"
+    },
+    "./devtools": {
+      "import": "./dist/lib/devtools.js",
+      "require": "./dist/lib/devtools.cjs",
+      "types": "./dist/lib/devtools.d.ts"
     }
   },
   "keywords": [

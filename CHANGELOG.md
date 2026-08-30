@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0
+
+### Added
+
+- **DevTools plugin entry point** (`@elurjs/query/devtools`): dev-only module
+  that registers a `Query` plugin on the elur DevTools backend hook
+  (`window.__ELUR_DEVTOOLS_HOOK__`), exposing a JSON-safe snapshot of the
+  query cache (keys, freshness, subscribers, truncated data previews),
+  in-flight requests and command queues. Never loaded in production: it is a
+  separate subpath that `@elurjs/vite-plugin-elur` injects automatically in
+  dev mode (`devtools: "auto"`). No hot-path or behavior changes.
+
 ## 1.5.0
 
 ### Added

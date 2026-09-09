@@ -45,7 +45,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run build:lib",
     "preview": "vite preview",
     "clean:lib": "rm -rf dist/lib",
     "build:lib": "vite build --config vite.lib.config.ts && tsc --project tsconfig.lib.json && terser dist/lib/elur-query.js -c -m -o dist/lib/elur-query.js && terser dist/lib/elur-query.cjs -c -m -o dist/lib/elur-query.cjs",

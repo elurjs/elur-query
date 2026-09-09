@@ -41,7 +41,7 @@
   ],
   "sideEffects": false,
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19.0"
   },
   "scripts": {
     "dev": "vite",
@@ -54,13 +54,13 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@elurjs/core": "^2.5.3 || ^3.0.0"
+    "@elurjs/core": "^3.0.0"
   },
   "devDependencies": {
     "@elurjs/core": "3.5.0",
     "happy-dom": "^20.8.3",
     "terser": "^5.46.0",
-    "typescript": "~5.9.3",
+    "typescript": "~7.0.2",
     "vite": "^8.0.0",
     "vitest": "^4.0.18"
   }

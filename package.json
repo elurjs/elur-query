@@ -57,7 +57,7 @@
     "@elurjs/core": "^3.0.0 || ^3.7.0-beta.0 || ^4.0.0"
   },
   "devDependencies": {
-    "@elurjs/core": "^4.0.0",
+    "@elurjs/core": "^4.0.1",
     "happy-dom": "^20.8.3",
     "terser": "^5.46.0",
     "typescript": "~7.0.2",
